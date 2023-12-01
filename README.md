@@ -1,4 +1,3 @@
 # KxHTTP
 
-Fast, simple, minimal HTTP client that runs on the commandline. Good
-for quick and easy API testing.
+A fast, open-source and minimal HTTP client for quick and easy API testing.
