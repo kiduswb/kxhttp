@@ -13,8 +13,8 @@ int main(int argc, char ** argv)
             "  GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD\n\n"
             "Options:\n"
             "  -f, --form [data]         Send form data (e.g., -f \"name=John\" -f \"lastname=Doe\")\n"
-            "  --form-file [file]        Form file upload (e.g., --form-file \"photo=/path/photo.png\")\n"
-            "  -j, --json [data]         Send raw JSON data (e.g., -j \"{\\\"key\\\": \\\"value\\\"}\")\n"
+            "  --form-file [file]        Form file upload (e.g., --form-file \"photo=/path/to/photo.png\")\n"
+            "  -j, --json [data]         Send raw JSON data (e.g., -j {\"key\": \"value\"}\n"
             "  --json-file [file]        Upload a JSON file (e.g., --json-file \"/path/data.json\")\n"
             "  -H, --headers [headers]   Send custom headers (e.g., -H \"Content-Type: application/json\")\n"
             "  -c, --cookies [cookies]   Send custom cookies (e.g., -c \"sessionid=xyz\")\n"
@@ -22,7 +22,7 @@ int main(int argc, char ** argv)
             "  -o, --output [file]       Save output to a file (e.g., -o \"output.txt\")\n\n"
             "Example Usage:\n"
             "  kxh GET https://api.example.com -o response.txt\n"
-            "  kxh POST https://api.example.com -j \"{\\\"name\\\": \\\"John\\\"}\"\n";
+            "  kxh POST https://api.example.com -j {\"name\": \"John\"}\n";
 
     app.set_version_flag("-v, --version", KXHTTP_VER);
     app.add_option("[Method]", methodStr, "HTTP method (GET, POST,...)")->required();
@@ -43,10 +43,19 @@ int main(int argc, char ** argv)
     }, "Show help message");
 
 
-    CLI11_PARSE(app, argc, argv);
+    try {
+        app.parse(argc, argv);
+        request.method = KxHTTP::stringToMethod(methodStr);
+    } catch (const CLI::ParseError &e) {
+        std::cerr << KXHTTP_CONSOLE_YELLOW << "Parsing Error: " << e.what() << KXHTTP_CONSOLE_RESET;
+    } catch (const std::exception &e) {
+        std::cerr << KXHTTP_CONSOLE_RED << "Fatal Error: " << e.what() << KXHTTP_CONSOLE_RESET;
+    }
 
-    // Set request method
-    request.method = KxHTTP::stringToMethod(methodStr);
+    //! DO: Process request and handle result functions called here
+    KxHTTP::HTTPRequest rq(request);
+    rq.sendRequest();
+    rq.processResponse();
 
     return 0;
 }
