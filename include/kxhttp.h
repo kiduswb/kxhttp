@@ -1,8 +1,12 @@
 #ifndef KXHTTP_H
 #define KXHTTP_H
 
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+
 #include <iostream>
+#include <fstream>
 #include <string>
+#include <vector>
 
 #include "cli11/CLI11.hpp"
 #include "httplib/httplib.h"
@@ -35,7 +39,9 @@ namespace KxHTTP
         std::vector<std::string> jsonFiles;
         std::vector<std::string> headers;
         std::vector<std::string> cookies;
-        std::string authData;
+        std::string authData; // Basic Auth
+        std::string authDigest;
+        std::string authBearerToken;
         std::string outputFile;
     };
 
@@ -45,14 +51,30 @@ namespace KxHTTP
             explicit HTTPRequest(RequestData& rd);
             ~HTTPRequest();
             void sendRequest();
-            void processResponse();
+            void processResponse() const;
 
         private:
+            void sendGET(httplib::Client *cli);
+            void sendPOST(httplib::Client *cli);
+            void sendPUT(httplib::Client *cli);
+            void sendDELETE(httplib::Client *cli);
+            void sendPATCH(httplib::Client *cli);
+            void sendOPTIONS(httplib::Client *cli);
+            void sendHEAD(httplib::Client *cli);
+
             RequestData requestData;
             httplib::Result result;
+            bool fileOutputStatus;
+            bool authTypeDefined;
+            httplib::Headers constructHeaders();
+            void setAuth(httplib::Client *cli);
     };
 
+    // Utilities
     Method stringToMethod(std::string& m);
+    std::string methodToString(Method m);
+    std::string getPathFromUrl(const std::string &url);
+    std::string getProtocolAndDomain(const std::string &url);
 }
 
 
