@@ -24,6 +24,8 @@ int main(int argc, char ** argv)
             "  -H, --headers [headers]   Send custom headers (e.g., -H \"Content-Type: application/json\")\n"
             "  -c, --cookies [cookies]   Send custom cookies (e.g., -c \"value=xyz\")\n"
             "  -a, --auth [credentials]  Basic Authentication (e.g., -a \"username:password\")\n"
+            "  --auth-digest [credentials]  Digest Authentication (e.g., --auth-digest \"username:password\")\n"
+            "  --auth-token [credentials]  Bearer Token Authentication (e.g., --auth-token \"token\")\n"
             "  -o, --output [file]       Save output to a file (e.g., -o \"output.txt\")\n\n"
             "Example Usage:\n"
             "  kxh GET https://api.example.com -o response.txt\n"
@@ -38,9 +40,9 @@ int main(int argc, char ** argv)
     app.add_option("--json-file", request.jsonFile, "Upload a JSON file");
     app.add_option("-H,--headers", request.headers, "Send custom headers");
     app.add_option("-c,--cookies", request.cookies, "Send custom cookies");
-    app.add_option("-a,--auth", request.authData, "Basic Authentication ex. -a \"username:passwd\"");
-    app.add_option("--auth-digest", request.authDigest, "Digest Authentication ex. --auth-digest \"username:passwd\"");
-    app.add_option("--auth-token", request.authBearerToken, "Bearer Token Authentication ex. --auth-token \"token\"");
+    app.add_option("-a,--auth", request.authData, "Basic Authentication");
+    app.add_option("--auth-digest", request.authDigest, "Digest Authentication");
+    app.add_option("--auth-token", request.authBearerToken, "Bearer Token Authentication");
     app.add_option("-o,--output", request.outputFile, "Save output to a file");
 
     // Overriding CLI11's help message
@@ -132,15 +134,12 @@ void KxHTTP::HTTPRequest::sendPOST(httplib::Client *cli)
     setAuth(cli);
     std::string path = getPathFromUrl(this->requestData.url);
 
-    // JSON POST request
+    // Handle JSON data or JSON file upload
     if (!this->requestData.jsonData.empty()) {
         headers.emplace("Content-Type", "application/json");
         std::string jsonBody = this->requestData.jsonData[0];
         this->result = cli->Post(path, headers, jsonBody, "application/json");
-    }
-
-    // Upload JSON file
-    else if (!this->requestData.jsonFile.empty()) {
+    } else if (!this->requestData.jsonFile.empty()) {
         std::ifstream jsonFile(this->requestData.jsonFile);
         if (jsonFile) {
             std::string jsonContent((std::istreambuf_iterator<char>(jsonFile)), std::istreambuf_iterator<char>());
@@ -151,36 +150,50 @@ void KxHTTP::HTTPRequest::sendPOST(httplib::Client *cli)
         }
     }
 
-    // Multipart form data (file uploads)
-    else if (!this->requestData.formFiles.empty()) {
+    // Multipart/form-data POST request (files and/or form data)
+    else
+    {
         httplib::MultipartFormDataItems items;
+
+        // Add form files to multipart form data
         for (const auto& formFile : this->requestData.formFiles) {
             auto delimiterPos = formFile.find('=');
             if (delimiterPos != std::string::npos) {
                 std::string key = formFile.substr(0, delimiterPos);
                 std::string filePath = formFile.substr(delimiterPos + 1);
-                items.push_back({ key, filePath, "application/octet-stream", "" });
+
+                // Open file and read content
+                std::ifstream file(filePath, std::ios::binary);
+                if (!file) {
+                    throw std::runtime_error("File '" + filePath + "' not found!");
+                } else {
+                    std::string fileContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                    std::string filename = filePath.substr(filePath.find_last_of("/\\") + 1);
+                    // Determine MIME type based on file extension (basic implementation)
+                    std::string mimeType = "application/octet-stream"; // default MIME type
+                    items.push_back({ key, fileContent, filename, mimeType });
+                }
             }
         }
-        this->result = cli->Post(path, headers, items);
-    }
 
-    // URL encoded form data
-    else if (!this->requestData.formData.empty()) {
-        httplib::Params params;
+        // Add URL encoded form data to multipart form data
         for (const auto& data : this->requestData.formData) {
             auto delimiterPos = data.find('=');
             if (delimiterPos != std::string::npos) {
                 std::string key = data.substr(0, delimiterPos);
                 std::string value = data.substr(delimiterPos + 1);
-                params.emplace(key, value);
+                items.push_back({ key, value, "", "" });
             }
         }
-        this->result = cli->Post(path, headers, params);
-    }
 
-    else
-        this->result = cli->Post(path, headers, "", "text/plain");
+        // If there are items to send
+        if (!items.empty()) {
+            this->result = cli->Post(path, headers, items);
+        } else {
+            // Simple POST request with no Body
+            this->result = cli->Post(path, headers, "", "text/plain");
+        }
+    }
 
     this->handleFileOutput();
 }
@@ -215,7 +228,6 @@ void KxHTTP::HTTPRequest::sendPUT(httplib::Client *cli)
     handleFileOutput();
 }
 
-
 void KxHTTP::HTTPRequest::sendDELETE(httplib::Client *cli)
 {
     httplib::Headers headers = constructHeaders();
@@ -223,7 +235,6 @@ void KxHTTP::HTTPRequest::sendDELETE(httplib::Client *cli)
     std::string path = getPathFromUrl(this->requestData.url);
 
     this->result = cli->Delete(path, headers);
-
     this->handleFileOutput();
 }
 
@@ -268,7 +279,6 @@ void KxHTTP::HTTPRequest::sendOPTIONS(httplib::Client *cli)
     handleFileOutput();
 }
 
-
 void KxHTTP::HTTPRequest::sendHEAD(httplib::Client *cli)
 {
     httplib::Headers headers = constructHeaders();
@@ -278,7 +288,6 @@ void KxHTTP::HTTPRequest::sendHEAD(httplib::Client *cli)
     this->result = cli->Head(path, headers);
     handleFileOutput();
 }
-
 
 void KxHTTP::HTTPRequest::processResponse() const
 {
@@ -336,7 +345,8 @@ void KxHTTP::HTTPRequest::setAuth(httplib::Client *cli)
     }
 }
 
-httplib::Headers KxHTTP::HTTPRequest::constructHeaders() {
+httplib::Headers KxHTTP::HTTPRequest::constructHeaders()
+{
     httplib::Headers headers;
     for (const auto& header : this->requestData.headers) {
         auto pos = header.find(':');
@@ -376,7 +386,8 @@ void KxHTTP::HTTPRequest::handleFileOutput()
     }
 }
 
-std::string KxHTTP::methodToString(KxHTTP::Method m) {
+std::string KxHTTP::methodToString(KxHTTP::Method m)
+{
     switch (m) {
         case KxHTTP::HTTP_GET: return "GET";
         case KxHTTP::HTTP_POST: return "POST";
@@ -389,7 +400,8 @@ std::string KxHTTP::methodToString(KxHTTP::Method m) {
     }
 }
 
-std::string KxHTTP::getPathFromUrl(const std::string& url) {
+std::string KxHTTP::getPathFromUrl(const std::string& url)
+{
     // Find position after the protocol delimiter (://)
     size_t protocolPos = url.find("://");
     if (protocolPos != std::string::npos) {
@@ -403,7 +415,8 @@ std::string KxHTTP::getPathFromUrl(const std::string& url) {
     return "/";
 }
 
-std::string KxHTTP::getProtocolAndDomain(const std::string& url) {
+std::string KxHTTP::getProtocolAndDomain(const std::string& url)
+{
     size_t protocolEnd = url.find("://");
     if (protocolEnd != std::string::npos) {
         size_t domainEnd = url.find('/', protocolEnd + 3); // skip "://"
@@ -413,6 +426,7 @@ std::string KxHTTP::getProtocolAndDomain(const std::string& url) {
             return url; // No path part found, return the whole URL
         }
     }
+
     return ""; // No protocol found, return empty string
 }
 
