@@ -1,3 +1,8 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+
 #include "kxhttp.h"
 
 int main(int argc, char ** argv)
@@ -30,7 +35,7 @@ int main(int argc, char ** argv)
     app.add_option("-f,--form", request.formData, "Send form data");
     app.add_option("--form-file", request.formFiles, "Form file uploads");
     app.add_option("-j,--json", request.jsonData, "Send raw JSON data");
-    app.add_option("--json-file", request.jsonFiles, "Upload JSON files");
+    app.add_option("--json-file", request.jsonFile, "Upload a JSON file");
     app.add_option("-H,--headers", request.headers, "Send custom headers");
     app.add_option("-c,--cookies", request.cookies, "Send custom cookies");
     app.add_option("-a,--auth", request.authData, "Basic Authentication ex. -a \"username:passwd\"");
@@ -85,7 +90,6 @@ void KxHTTP::HTTPRequest::sendRequest()
 
     switch (this->requestData.method)
     {
-
         case HTTP_GET:
             this->sendGET(cli);
             break;
@@ -118,25 +122,66 @@ void KxHTTP::HTTPRequest::sendGET(httplib::Client *cli)
     setAuth(cli);
 
     this->result = cli->Get(getPathFromUrl(this->requestData.url), headers);
-
-    if (this->result->status == 200 && !this->requestData.outputFile.empty()) {
-        std::ofstream outFile(this->requestData.outputFile, std::ios::binary);
-        if (outFile.is_open()) {
-            outFile << this->result->body;
-            this->fileOutputStatus = true;
-        } else {
-            throw std::runtime_error("Failed to open " + this->requestData.outputFile + " for writing.\n");
-        }
-    }
+    this->handleFileOutput();
 }
 
 void KxHTTP::HTTPRequest::sendPOST(httplib::Client *cli)
 {
-    // Check for headers and cookies
-    // Check for auth
-    // Check for form data, form files
-    // Check for JSON data, JSON files
+    httplib::Headers headers = constructHeaders();
+    setAuth(cli);
+    std::string path = getPathFromUrl(this->requestData.url);
 
+    // JSON POST request
+    if (!this->requestData.jsonData.empty()) {
+        headers.emplace("Content-Type", "application/json");
+        std::string jsonBody = this->requestData.jsonData[0];
+        this->result = cli->Post(path, headers, jsonBody, "application/json");
+    }
+
+    // Upload JSON file
+    else if (!this->requestData.jsonFile.empty()) {
+        std::ifstream jsonFile(this->requestData.jsonFile);
+        if (jsonFile) {
+            std::string jsonContent((std::istreambuf_iterator<char>(jsonFile)), std::istreambuf_iterator<char>());
+            headers.emplace("Content-Type", "application/json");
+            this->result = cli->Post(path, headers, jsonContent, "application/json");
+        } else {
+            throw std::runtime_error("Failed to open JSON file: " + this->requestData.jsonFile);
+        }
+    }
+
+    // Multipart form data (file uploads)
+    else if (!this->requestData.formFiles.empty()) {
+        httplib::MultipartFormDataItems items;
+        for (const auto& formFile : this->requestData.formFiles) {
+            auto delimiterPos = formFile.find('=');
+            if (delimiterPos != std::string::npos) {
+                std::string key = formFile.substr(0, delimiterPos);
+                std::string filePath = formFile.substr(delimiterPos + 1);
+                items.push_back({ key, filePath, "application/octet-stream", "" });
+            }
+        }
+        this->result = cli->Post(path, headers, items);
+    }
+
+    // URL encoded form data
+    else if (!this->requestData.formData.empty()) {
+        httplib::Params params;
+        for (const auto& data : this->requestData.formData) {
+            auto delimiterPos = data.find('=');
+            if (delimiterPos != std::string::npos) {
+                std::string key = data.substr(0, delimiterPos);
+                std::string value = data.substr(delimiterPos + 1);
+                params.emplace(key, value);
+            }
+        }
+        this->result = cli->Post(path, headers, params);
+    }
+
+    else
+        this->result = cli->Post(path, headers, "", "text/plain");
+
+    this->handleFileOutput();
 }
 
 void KxHTTP::HTTPRequest::sendPUT(httplib::Client *cli)
@@ -146,43 +191,79 @@ void KxHTTP::HTTPRequest::sendPUT(httplib::Client *cli)
 
 void KxHTTP::HTTPRequest::sendDELETE(httplib::Client *cli)
 {
-    // Check for headers and cookies
-    // Check for auth
+    httplib::Headers headers = constructHeaders();
+    setAuth(cli);
+    std::string path = getPathFromUrl(this->requestData.url);
+
+    this->result = cli->Delete(path, headers);
+
+    this->handleFileOutput();
 }
 
 void KxHTTP::HTTPRequest::sendPATCH(httplib::Client *cli)
 {
-    // Check for headers and cookies
-    // Check for auth
-    // Check for form data, form files
-    // Check for JSON data, JSON files
+    httplib::Headers headers = constructHeaders();
+    setAuth(cli);
+    std::string path = getPathFromUrl(this->requestData.url);
+
+    if (!this->requestData.jsonData.empty()) {
+        headers.emplace("Content-Type", "application/json");
+        std::string jsonBody = this->requestData.jsonData[0];
+        this->result = cli->Patch(path, headers, jsonBody, "application/json");
+    }
+
+    else if (!this->requestData.formData.empty()) {
+        std::string formBody;
+        for (const auto& data : this->requestData.formData) {
+            if (!formBody.empty()) {
+                formBody += "&";
+            }
+            formBody += data;
+        }
+        headers.emplace("Content-Type", "application/x-www-form-urlencoded");
+        this->result = cli->Patch(path, headers, formBody, "application/x-www-form-urlencoded");
+    }
+
+    else {
+        this->result = cli->Patch(path, headers, "", "text/plain");
+    }
+
+    handleFileOutput();
 }
 
 void KxHTTP::HTTPRequest::sendOPTIONS(httplib::Client *cli)
 {
-    // Options request shit here
+    httplib::Headers headers = constructHeaders();
+    setAuth(cli);
+    std::string path = getPathFromUrl(this->requestData.url);
+
+    this->result = cli->Options(path, headers);
+    handleFileOutput();
 }
+
 
 void KxHTTP::HTTPRequest::sendHEAD(httplib::Client *cli)
 {
-    // Check for headers and cookies
-    // Check for auth
+    httplib::Headers headers = constructHeaders();
+    setAuth(cli);
+    std::string path = getPathFromUrl(this->requestData.url);
+
+    this->result = cli->Head(path, headers);
+    handleFileOutput();
 }
+
 
 void KxHTTP::HTTPRequest::processResponse() const
 {
-    // Format and output the appropriate data
-    // from result object
-
     std::cout << std::flush;
     std::cout << KXHTTP_CONSOLE_YELLOW << "Sending " << KxHTTP::methodToString(this->requestData.method) << " request to "
               << KXHTTP_CONSOLE_BLUE << this->requestData.url << KXHTTP_CONSOLE_RESET << "\n";
 
     std::cout << (this->result->status == 200 ? KXHTTP_CONSOLE_GREEN : KXHTTP_CONSOLE_YELLOW) <<
-    "Request returned status code " << this->result->status << KXHTTP_CONSOLE_RESET << "\n";
+    "Request returned Status Code " << this->result->status << KXHTTP_CONSOLE_RESET << "\n";
     std::cout << "\nHeaders: \n\n";
     for (const auto& header : this->result->headers)
-        std::cout << header.first << " : " << header.second << "\n";
+        std::cout << header.first << ": " << header.second << "\n";
 
     if(this->fileOutputStatus && this->result->status == 200)
         std::cout << KXHTTP_CONSOLE_GREEN << "\nOutput saved to: "
@@ -242,7 +323,6 @@ httplib::Headers KxHTTP::HTTPRequest::constructHeaders() {
     return headers;
 }
 
-// Converts std::string object to a KxHTTP::Method value
 KxHTTP::Method KxHTTP::stringToMethod(std::string& m)
 {
     if (m == "GET") return KxHTTP::HTTP_GET;
@@ -256,7 +336,18 @@ KxHTTP::Method KxHTTP::stringToMethod(std::string& m)
     return HTTP_GET;
 }
 
-// Temporary solution, will be refactored later
+void KxHTTP::HTTPRequest::handleFileOutput()
+{
+    if (this->result->status == 200 && !this->requestData.outputFile.empty()) {
+        std::ofstream outFile(this->requestData.outputFile, std::ios::binary);
+        if (outFile.is_open()) {
+            outFile << this->result->body;
+            this->fileOutputStatus = true;
+        } else {
+            throw std::runtime_error("Failed to open " + this->requestData.outputFile + " for writing.\n");
+        }
+    }
+}
 
 std::string KxHTTP::methodToString(KxHTTP::Method m) {
     switch (m) {

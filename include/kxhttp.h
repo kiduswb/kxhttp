@@ -3,11 +3,6 @@
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <vector>
-
 #include "cli11/CLI11.hpp"
 #include "httplib/httplib.h"
 
@@ -36,7 +31,7 @@ namespace KxHTTP
         std::vector<std::string> formData;
         std::vector<std::string> formFiles;
         std::vector<std::string> jsonData;
-        std::vector<std::string> jsonFiles;
+        std::string jsonFile;
         std::vector<std::string> headers;
         std::vector<std::string> cookies;
         std::string authData; // Basic Auth
@@ -68,6 +63,7 @@ namespace KxHTTP
             bool authTypeDefined;
             httplib::Headers constructHeaders();
             void setAuth(httplib::Client *cli);
+            void handleFileOutput();
     };
 
     // Utilities
