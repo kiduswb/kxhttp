@@ -43,10 +43,11 @@ int main(int argc, char ** argv)
     app.add_option("--auth-token", request.authBearerToken, "Bearer Token Authentication ex. --auth-token \"token\"");
     app.add_option("-o,--output", request.outputFile, "Save output to a file");
 
-    app.set_help_flag(); // Disable default help flag
-    app.add_flag_callback("-h,--help", [&app, &customHelpMessage]() {
+    // Overriding CLI11's help message
+    app.set_help_flag();
+    app.add_flag_callback("-h,--help", [&customHelpMessage]() {
         std::cout << customHelpMessage << std::endl;
-        exit(0);  // Exit after displaying help
+        exit(0);
     }, "Show help message");
 
     try {
@@ -186,8 +187,34 @@ void KxHTTP::HTTPRequest::sendPOST(httplib::Client *cli)
 
 void KxHTTP::HTTPRequest::sendPUT(httplib::Client *cli)
 {
+    httplib::Headers headers = constructHeaders();
+    setAuth(cli);
+    std::string path = getPathFromUrl(this->requestData.url);
 
+    if (!this->requestData.jsonData.empty()) {
+        headers.emplace("Content-Type", "application/json");
+        std::string jsonBody = this->requestData.jsonData[0];
+        this->result = cli->Put(path, headers, jsonBody, "application/json");
+    }
+
+    else if (!this->requestData.formData.empty()) {
+        std::string formBody;
+        for (const auto& data : this->requestData.formData) {
+            if (!formBody.empty()) {
+                formBody += "&";
+            }
+            formBody += data;
+        }
+        headers.emplace("Content-Type", "application/x-www-form-urlencoded");
+        this->result = cli->Put(path, headers, formBody, "application/x-www-form-urlencoded");
+    }
+
+    else
+        this->result = cli->Put(path, headers, "", "text/plain");
+
+    handleFileOutput();
 }
+
 
 void KxHTTP::HTTPRequest::sendDELETE(httplib::Client *cli)
 {
