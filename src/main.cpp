@@ -135,6 +135,8 @@ void KxHTTP::HTTPRequest::sendPOST(httplib::Client *cli)
     std::string path = getPathFromUrl(this->requestData.url);
 
     // Handle JSON data or JSON file upload
+    // Prioritizes JSON flags over form data flags
+
     if (!this->requestData.jsonData.empty()) {
         headers.emplace("Content-Type", "application/json");
         std::string jsonBody = this->requestData.jsonData[0];
@@ -161,12 +163,14 @@ void KxHTTP::HTTPRequest::sendPOST(httplib::Client *cli)
             if (delimiterPos != std::string::npos) {
                 std::string key = formFile.substr(0, delimiterPos);
                 std::string filePath = formFile.substr(delimiterPos + 1);
-
                 // Open file and read content
                 std::ifstream file(filePath, std::ios::binary);
                 if (!file) {
                     throw std::runtime_error("File '" + filePath + "' not found!");
-                } else {
+                }
+
+                else
+                {
                     std::string fileContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
                     std::string filename = filePath.substr(filePath.find_last_of("/\\") + 1);
                     // Determine MIME type based on file extension (basic implementation)
