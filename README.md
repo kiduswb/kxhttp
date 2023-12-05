@@ -9,8 +9,7 @@ the build script suitable for your platform located in the "scripts" folder. You
 need to modify the scripts in accordance with your environment.
 
 Alternatively, you can head over to [kxhttp.org/downloads](https://kxhttp.org/downloads) to download 
-installers. At the moment I've only built a Windows installer, other installers 
-will be available soon.
+binaries and other related files.
 
 ## Documentation
 
