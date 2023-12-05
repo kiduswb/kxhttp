@@ -13,7 +13,7 @@ binaries and other related files.
 
 ## Documentation
 
-To view detailed documentation about KxHTTP, please visit [kxhttp.org/docs](kxhttp.org/docs).
+To view detailed documentation about KxHTTP, please visit [kxhttp.org/docs](https://kxhttp.org/docs).
 
 ## Contribution
 
